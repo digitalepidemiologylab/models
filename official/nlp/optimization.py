@@ -162,9 +162,9 @@ class AdamWeightDecay(tf.keras.optimizers.Adam):
   def apply_gradients(self,
                       grads_and_vars,
                       name=None,
-                      experimental_aggregate_gradients=True):
+                      all_reduce_sum_gradients=True):
     grads, tvars = list(zip(*grads_and_vars))
-    if experimental_aggregate_gradients:
+    if all_reduce_sum_gradients:
       # when experimental_aggregate_gradients = False, apply_gradients() no
       # longer implicitly allreduce gradients, users manually allreduce gradient
       # and passed the allreduced grads_and_vars. For now, the
@@ -173,8 +173,11 @@ class AdamWeightDecay(tf.keras.optimizers.Adam):
       (grads, _) = tf.clip_by_global_norm(grads, clip_norm=1.0)
     return super(AdamWeightDecay, self).apply_gradients(
         zip(grads, tvars),
-        name=name,
-        experimental_aggregate_gradients=experimental_aggregate_gradients)
+        name=name)
+    # return super(AdamWeightDecay, self).apply_gradients(
+    #     zip(grads, tvars),
+    #     name=name,
+    #     all_reduce_sum_gradients=all_reduce_sum_gradients)
 
   def _get_lr(self, var_device, var_dtype, apply_state):
     """Retrieves the learning rate with the given state."""

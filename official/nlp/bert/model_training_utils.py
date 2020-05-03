@@ -226,7 +226,8 @@ def run_customized_training_loop(
     raise ValueError(
         'if `metric_fn` is specified, metric_fn must be a callable.')
 
-  callback_list = tf.keras.callbacks.CallbackList(custom_callbacks)
+  # callback_list = tf.keras.callbacks.CallbackList(custom_callbacks)
+  callback_list = custom_callbacks
 
   total_training_steps = steps_per_epoch * epochs
   train_iterator = _get_input_iterator(train_input_fn, strategy)
@@ -333,7 +334,7 @@ def run_customized_training_loop(
                          'retracing.')
 
       for _ in tf.range(steps):
-        strategy.run(_replicated_step, args=(next(iterator),))
+        strategy.experimental_run_v2(_replicated_step, args=(next(iterator),))
 
     def train_single_step(iterator):
       """Performs a distributed training step.
@@ -344,7 +345,7 @@ def run_customized_training_loop(
       Raises:
         ValueError: Any of the arguments or tensor shapes are invalid.
       """
-      strategy.run(_replicated_step, args=(next(iterator),))
+      strategy.experimental_run_v2(_replicated_step, args=(next(iterator),))
 
     def test_step(iterator):
       """Calculates evaluation metrics on distributed devices."""
@@ -357,7 +358,7 @@ def run_customized_training_loop(
         for metric in eval_metrics:
           metric.update_state(labels, model_outputs)
 
-      strategy.run(_test_step_fn, args=(next(iterator),))
+      strategy.experimental_run_v2(_test_step_fn, args=(next(iterator),))
 
     if not run_eagerly:
       train_single_step = tf.function(train_single_step)
@@ -409,7 +410,8 @@ def run_customized_training_loop(
 
     while current_step < total_training_steps:
       if current_step % steps_per_epoch == 0:
-        callback_list.on_epoch_begin(int(current_step / steps_per_epoch) + 1)
+        for cb in callback_list:
+          cb.on_epoch_begin(int(current_step / steps_per_epoch) + 1)
 
       # Training loss/metric are taking average over steps inside micro
       # training loop. We reset the their values before each round.
@@ -417,7 +419,8 @@ def run_customized_training_loop(
       for metric in train_metrics + model.metrics:
         metric.reset_states()
 
-      callback_list.on_batch_begin(current_step)
+      for cb in callback_list:
+        cb.on_batch_begin(current_step)
       # Runs several steps in the host while loop.
       steps = steps_to_run(current_step, steps_per_epoch, steps_per_loop)
 
@@ -432,7 +435,8 @@ def run_customized_training_loop(
                     tf.convert_to_tensor(steps, dtype=tf.int32))
       train_loss = _float_metric_value(train_loss_metric)
       current_step += steps
-      callback_list.on_batch_end(current_step - 1, {'loss': train_loss})
+      for cb in callback_list:
+        cb.on_batch_end(current_step - 1, {'loss': train_loss})
 
       # Updates training logging.
       training_status = 'Train Step: %d/%d  / loss = %s' % (
@@ -471,7 +475,8 @@ def run_customized_training_loop(
             for metric in eval_metrics + model.metrics:
               metric.reset_states()
 
-          callback_list.on_epoch_end(int(current_step / steps_per_epoch), logs)
+          for cb in callback_list:
+            cb.on_epoch_end(int(current_step / steps_per_epoch), logs)
 
     if sub_model_export_name:
       _save_checkpoint(strategy, sub_model_checkpoint, model_dir,
@@ -485,7 +490,8 @@ def run_customized_training_loop(
       logs = _run_evaluation(current_step,
                              _get_input_iterator(eval_input_fn, strategy))
 
-    callback_list.on_epoch_end(int(current_step / steps_per_epoch), logs)
+    for cb in callback_list:
+      cb.on_epoch_end(int(current_step / steps_per_epoch), logs)
 
     training_summary = {
         'total_training_steps': total_training_steps,
